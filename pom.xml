@@ -12,6 +12,7 @@
 
   <modules>
     <module>backend-main</module>
+    <module>frontend-main</module>
   </modules>
 
   <parent>
