@@ -1,0 +1,141 @@
+kind: "Template"
+apiVersion: "v1"
+metadata:
+  name: backend-main-template
+objects:
+  - apiVersion: apps.openshift.io/v1
+    kind: DeploymentConfig
+    metadata:
+      annotations:
+        openshift.io/generated-by: OpenShiftNewApp
+      creationTimestamp: null
+      generation: 1
+      labels:
+        app: ${APP_NAME}
+        version: ${APP_VERSION}
+      name: ${DC_NAME}
+      selfLink: /apis/apps.openshift.io/v1/namespaces/${PROJECT}/deploymentconfigs/{DC_NAME}
+    spec:
+      replicas: 3
+      revisionHistoryLimit: 10
+      selector:
+        app: ${APP_NAME}
+        deploymentconfig: ${DC_NAME}
+        version: ${APP_VERSION}
+      strategy:
+        activeDeadlineSeconds: 21600
+        resources: {}
+        rollingParams:
+          intervalSeconds: 1
+          maxSurge: 25%
+          maxUnavailable: 25%
+          timeoutSeconds: 600
+          updatePeriodSeconds: 1
+        type: Rolling
+      template:
+        metadata:
+          annotations:
+            openshift.io/generated-by: OpenShiftNewApp
+          creationTimestamp: null
+          labels:
+            app: ${APP_NAME}
+            deploymentconfig: ${DC_NAME}
+            version: ${APP_VERSION}
+        spec:
+          containers:
+          - image: 172.30.1.1:5000/${PROJECT}/${DC_NAME}:${APP_VERSION}
+            imagePullPolicy: Always
+            name: ${DC_NAME}
+            ports:
+            - containerPort: 8080
+              protocol: TCP
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          schedulerName: default-scheduler
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+      test: false
+      triggers:
+      - type: ConfigChange
+    status:
+      availableReplicas: 0
+      latestVersion: 0
+      observedGeneration: 0
+      replicas: 0
+      unavailableReplicas: 0
+      updatedReplicas: 0
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      annotations:
+        openshift.io/generated-by: OpenShiftNewApp
+      creationTimestamp: null
+      labels:
+        app: ${APP_NAME}
+        version: ${APP_VERSION}
+      name: ${DC_NAME}
+      selfLink: /api/v1/namespaces/${PROJECT}/services/${DC_NAME}
+    spec:
+      ports:
+      - name: 8080-tcp
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+      selector:
+        app: ${APP_NAME}
+        deploymentconfig: ${DC_NAME}
+        version: ${APP_VERSION}
+      sessionAffinity: None
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      annotations:
+        openshift.io/host.generated: "true"
+      creationTimestamp: null
+      labels:
+        app: ${APP_NAME}
+        version: ${APP_VERSION}
+      name: ${DC_NAME}
+      selfLink: /apis/route.openshift.io/v1/namespaces/${PROJECT}/routes/${DC_NAME}
+    spec:
+      host: ${DC_NAME}-${PROJECT}.${DOMAIN_NAME}
+      port:
+        targetPort: 8080-tcp
+      to:
+        kind: Service
+        name: ${DC_NAME}
+        weight: 100
+      wildcardPolicy: None
+    status:
+      ingress: null
+parameters:
+  - description: Name of your application
+    displayName: App Name
+    name: APP_NAME
+    required: true
+    value: backend-main
+  - description: Version of your application
+    displayName: App Version
+    name: APP_VERSION
+    required: true
+    value: "1.1"
+  - description: Project/Namespace to deploy your application in
+    displayName: Project
+    name: PROJECT
+    required: true
+    value: backend-main
+  - description: Domain name of your openshift cluster
+    displayName: Domain Name
+    name: DOMAIN_NAME
+    required: true
+    value: 192.168.99.100.nip.io
+  - description: Deployment Config name of your application
+    displayName: DC Name
+    name: DC_NAME
+    required: true

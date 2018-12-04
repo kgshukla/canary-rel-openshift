@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: app-main-upgrade-pipeline
+parameters:
+- name: APP_NAME
+  description: Name of the application
+  displayName: Application Name
+  required: true
+  value: backend-main
+- name: APP_PROJECT
+  description: Project or Namespace where application would be deployed
+  displayName: Project Name
+  required: true
+  value: backend-main
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      pipeline.alpha.openshift.io/uses: '[{"name": "${NAME}", "namespace": "", "kind": "DeploymentConfig"}]'
+    creationTimestamp: null
+    labels:
+      app: ${APP_NAME}-upgrade-jenkins
+    name: ${APP_NAME}-upgrade-jenkins
+  spec:
+    strategy:
+      jenkinsPipelineStrategy:
+        jenkinsfile: |-
+            pipeline {
+              environment {
+                appName="${APP_NAME}"
+                project="${APP_NAME}" 
+                is_canary="TRUE"
+                new_rel_tag="1.2"
+              }
+              
+              agent {
+                label 'maven'
+              }
+              
+              stages {
+                stage("Check Params") {
+                  steps {
+                    sh "echo project name - ${project}"
+                  }
+                }
+
+
+                stage("Traffic to Canary") {
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          if (openshift.selector("service", [ app : "${APP_NAME}", version : "canary" ]).exists()) {
+                            // move all traffic to canary svc name
+                            sh "oc set route-backends ${APP_NAME} ${APP_NAME}-canary=100 -n ${project}"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Create ImageStream Tag") {
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          if (openshift.selector("is", "${APP_NAME}-canary").exists()) {
+                            def total_tags = openshift.selector("istag", [ app : "${APP_NAME}" ]).count()
+                            def new_minor_tag = total_tags + 1
+                            new_rel_tag = "1.${new_minor_tag}"
+                            openshift.tag("${project}/${APP_NAME}-canary:canary", "${APP_NAME}:${new_rel_tag}")
+                          } 
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Update DC") {
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          sh "oc rollout pause dc/${APP_NAME} -n ${APP_NAME}"
+                          sh "oc set image dc/${APP_NAME} ${APP_NAME}=${project}/${APP_NAME}:${new_rel_tag} --source=imagestreamtag -n ${APP_NAME}"
+                          sh "oc label dc/${APP_NAME} version=${new_rel_tag} --overwrite=true -n ${APP_NAME}"
+                          sh "oc rollout resume dc/${APP_NAME} -n ${APP_NAME}"
+                          //sh "oc rollout latest dc/${APP_NAME} -n ${APP_NAME}"
+                          sh "sleep 75"
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Update label") {
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          sh "oc label svc/${APP_NAME} version=${new_rel_tag}  --overwrite=true -n ${APP_NAME}"
+                          sh "oc label route/${APP_NAME} version=${new_rel_tag}  --overwrite=true -n ${APP_NAME}"
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Move traffic to Main?") {
+                  steps {
+                    script {
+                      def userInput = input(
+                          id: 'userInput', message: 'Let\'s map all traffic to main app and delete canary?', parameters: [
+                            [$class: 'TextParameterDefinition', defaultValue: 'yes', description: 'Proceed?', name: 'value']
+                      ])
+                    }
+                  }
+                }
+
+                stage("Traffic to New Version") {
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          // move all traffic to svc name
+                          sh "oc set route-backends ${APP_NAME} ${APP_NAME}=100 -n ${project}"
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Delete Canary") {
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          if (openshift.selector("all", [ app : "${APP_NAME}", version : "canary" ]).exists()) {
+                            openshift.selector("all", [ app : "${APP_NAME}", version : "canary" ]).delete()
+                          }
+                          if (openshift.selector("is", "${APP_NAME}-canary").exists()) {
+                            openshift.selector("is", "${APP_NAME}-canary").delete()
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+    type: JenkinsPipeline
+

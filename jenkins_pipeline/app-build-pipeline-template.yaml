@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: app-main-build-pipeline
+parameters:
+- name: APP_NAME
+  description: Name of the application
+  displayName: Application Name
+  required: true
+  value: backend-main
+- name: APP_PROJECT
+  description: Project or Namespace where application would be deployed
+  displayName: Project Name
+  required: true
+  value: backend-main
+- name: GIT_SOURCE_URL
+  description: The source URL for the application
+  displayName: Source URL
+  required: true
+  value: https://github.com/kgshukla/canary-rel-openshift.git
+- name: GIT_SOURCE_REF
+  description: The source Ref for the application
+  displayName: Source Ref
+  required: true
+  value: master
+- name: GIT_CONTEXT_PATH
+  description: Module within git project
+  displayName: Context path
+  required: true
+  value: backend-main
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      pipeline.alpha.openshift.io/uses: '[{"name": "${APP_NAME}", "namespace": "", "kind": "DeploymentConfig"}]'
+    creationTimestamp: null
+    labels:
+      app: ${APP_NAME}-build-jenkins
+    name: ${APP_NAME}-build-jenkins
+  spec:
+    strategy:
+      jenkinsPipelineStrategy:
+        jenkinsfile: |-
+            pipeline {
+              environment {
+                appName="${APP_NAME}"
+                project="${APP_PROJECT}" 
+                project_build="${APP_PROJECT}-build"
+              }
+              
+              agent {
+                label 'maven'
+              }
+              
+              stages {
+                stage("Check Params") {
+                  steps {
+                    sh "echo project name - ${project} and project build name - ${project_build}"
+                  }
+                }
+
+                 stage("Create BuildConfig") {
+                  when {
+                    expression {
+                      openshift.withCluster() {
+                        openshift.withProject("${project_build}") {
+                          return !openshift.selector("bc", "${APP_NAME}").exists();
+                        }
+                      }
+                    }
+                  }
+
+                  // First time deployment
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project_build}") {
+                          openshift.newBuild("--name=${APP_NAME}", "--image-stream=redhat-openjdk18-openshift:1.2", "--binary")
+                          sh "oc label bc/${APP_NAME} app=${APP_NAME} -n ${project_build}"
+                          sh "oc label is/${APP_NAME} app=${APP_NAME} -n ${project_build}"
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Checkout Source") {
+                  steps {
+                    git url: "${GIT_SOURCE_URL}", branch: "${GIT_SOURCE_REF}"
+                  }
+                }
+
+                stage("Build Jar") {
+                  steps {
+                    script {
+                      if ("${GIT_CONTEXT_PATH}" == "") {
+                        sh "mvn clean package -DskipTests"
+                        stash name:jar, includes:"target/${APP_NAME}-0.0.1-SNAPSHOT.jar"
+                      } else {
+                        sh "mvn -pl ${GIT_CONTEXT_PATH} clean package -DskipTests"
+                        stash name:"jar", includes:"${GIT_CONTEXT_PATH}/target/${GIT_CONTEXT_PATH}-0.0.1-SNAPSHOT.jar"
+                      }
+                    }
+                  }
+                }
+
+                stage("Build Image") {
+                  steps {
+                    script {
+                      unstash name:"jar"
+                      openshift.withCluster() {
+                        openshift.withProject("${project_build}") {
+                          if ("${GIT_CONTEXT_PATH}" == "") {
+                            openshift.startBuild("${APP_NAME}", "--from-file=target/${APP_NAME}-0.0.1-SNAPSHOT.jar", "--wait=true")
+                          } else {
+                            openshift.startBuild("${APP_NAME}", "--from-file=${GIT_CONTEXT_PATH}/target/${GIT_CONTEXT_PATH}-0.0.1-SNAPSHOT.jar", "--wait=true")
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+    type: JenkinsPipeline
+

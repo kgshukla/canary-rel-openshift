@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: app-main-deploy-pipeline
+parameters:
+- name: APP_NAME
+  description: Name of the application
+  displayName: Application Name
+  required: true
+  value: backend-main
+- name: APP_PROJECT
+  description: Project or Namespace where application would be deployed
+  displayName: Project Name
+  required: true
+  value: backend-main
+- name: CANARY_URL_REQ
+  description: Does Canary version require a new url
+  displayName: Canary URL Required
+  required: true
+  value: "true"
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      pipeline.alpha.openshift.io/uses: '[{"name": "${APP_NAME}", "namespace": "", "kind": "DeploymentConfig"}]'
+    creationTimestamp: null
+    labels:
+      app: ${APP_NAME}-deploy-jenkins
+    name: ${APP_NAME}-deploy-jenkins
+  spec:
+    strategy:
+      jenkinsPipelineStrategy:
+        jenkinsfile: |-
+            pipeline {
+              environment {
+                appName="${APP_NAME}"
+                project="${APP_PROJECT}" 
+                project_build="${APP_PROJECT}-build"
+                is_canary="TRUE"
+              }
+ 
+              agent {
+                label 'maven'
+              }
+             
+              stages {
+                stage("Check Params") {
+                  steps {
+                    sh "echo project name - ${project} and project build name - ${project_build}"
+                  }
+                }
+
+
+                stage("Cleanup") {
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          if (openshift.selector("all", [ app : "${APP_NAME}", version : "canary" ]).exists()) {
+                            openshift.selector("all", [ app : "${APP_NAME}", version : "canary" ]).delete()
+                          }
+                          if (openshift.selector("is", "${APP_NAME}-canary").exists()) {
+                            openshift.selector("is", "${APP_NAME}-canary").delete()
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Deploy App") {
+                  when {
+                    expression {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          return !openshift.selector("is", "${APP_NAME}").exists();
+                        }
+                      }
+                    }
+                  }
+
+                  // First time deployment, create image stream
+                  steps {
+                    script {
+                      is_canary="FALSE"
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          openshift.create("imagestream", "${APP_NAME}")
+                          sh "oc label is/${APP_NAME} app=${APP_NAME} -n ${project}"
+                          openshift.tag("${project_build}/${APP_NAME}:latest", "${APP_NAME}:1.1")
+                          sh "oc process ${APP_NAME}-template APP_NAME=${APP_NAME} APP_VERSION=1.1 PROJECT=${project} DC_NAME=${APP_NAME} -n ${project} | oc create -n ${project} -f -"
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Deploy Canary") {
+                  when {
+                    expression {
+                      return (is_canary == "TRUE")
+                    }
+                  }
+
+                  // create new tag for the image stream
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          openshift.create("imagestream", "${APP_NAME}-canary")
+                          openshift.tag("${project_build}/${APP_NAME}:latest", "${APP_NAME}-canary:canary")
+                          sh "oc process ${APP_NAME}-template APP_NAME=${APP_NAME} APP_VERSION=canary PROJECT=${project} DC_NAME=${APP_NAME}-canary -n ${project} | oc create -n ${project} -f -"
+                          if (${CANARY_URL_REQ} == "false") {
+                            if (openshift.selector("route", "${APP_NAME}-canary").exists()) {
+                              openshift.selector("route", "${APP_NAME}-canary").delete()
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Split Traffic") {
+                  when {
+                    expression {
+                      return (is_canary == "TRUE") && ("${CANARY_URL_REQ}" == "false")
+                    }
+                  }
+
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          sh "oc set route-backends ${APP_NAME} ${APP_NAME}=70 ${APP_NAME}-canary=30 -n ${project}"
+                          // delete canary route if it is created 
+                          if (openshift.selector("route", [ app : "${APP_NAME}", version : "canary" ]).exists()) {
+                            openshift.selector("route", [ app : "${APP_NAME}", version : "canary" ]).delete()
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+    type: JenkinsPipeline
+
