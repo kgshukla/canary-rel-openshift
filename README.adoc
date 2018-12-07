@@ -29,6 +29,7 @@ c. B exposes a route that used by F. F uses configmap to store B's route informa
 d. 100% traffic is routed to F
 
 Now, we should be able to cater to following use cases -
+
 a. Only F is upgraded
 b. Only B is upgraded
 c. Both F and B need to be upgraded simultaneously
@@ -40,27 +41,30 @@ Before, we jump into solution, let's see how we could do canary style upgrades i
 image::docs/canary_rollout_flow.png[]
 
 Things to note -
+
 a. We are not focusing on how to build and tag images during build phase
 b. We are not focusing on how to move the image across various non-prod envs
 c. We are only focusing in situation when once an image is ready to be deployed to production, how do we perform canary style upgrade
 
 
-"Build latest version of application container image" step in above aims to create an imagestream marked with some tag. Since our solution does not focus on tagging and building, in our followup demo we would just build an image using binary build in Openshift and tag it to latest. 
+"*Build latest version of application container image*" step in above aims to create an imagestream marked with some tag. Since our solution does not focus on tagging and building, in our followup demo we would just build an image using binary build in Openshift and tag it to latest. 
 
-"Test container image in various envs" step does the routine testing (SIT, UAT, Integration etc) and once it is establised that the image is ready to be pushed to production, we move to next step
+"*Test container image in various envs*" step does the routine testing (SIT, UAT, Integration etc) and once it is establised that the image is ready to be pushed to production, we move to next step
 
-"Deploy Canary application in Prod" step assumes that some version of image is already running in production and we now have to perform the canary upgrade. Following tasks happens in this stage. 
+"*Deploy Canary application in Prod*" step assumes that some version of image is already running in production and we now have to perform the canary upgrade. Following tasks happens in this stage. 
+
 a. The canary is deployed in the same namespace/project as the prod application's namespace/project. It cleans up all canary related artifacts (like deployment config, image stream, routes, services, config maps etc of the canary) if they exist.
 b. A new imagestream (app-name-canary) is created a new tag "canary" is created which points to the image we want to refer created during build phase.
 c. A separate deployment config, service, route, config map for the canary is created in the same namespace/project.
 d. As part of deployment it is required from operator deploying the canary application whether this canary needs a separate route or not. In our example since frontend app (F) communicates to backend app (B), we need to have a canary route for B's canary so that F's canary always call B's canary via the new canary route. So, if a canary route is requested, a new route is created. And if not, then B's route is updated to divert 10% of the traffic to B's canary version.
 In our example above, when we would deploy F's canary, we would not require a new route because F's route is exposed to end user. F's route would be updated to send 10% of traffic to F's canary's service url. Once traffic is already split at front end application, it should now be diverted to all canary versions (whether backend or frontend). Therefore F' canary will divert all traffic to B's canary and that is why B's canary require a dedicated canary route.
 
-"Canary Testing Successful" is a manual step and waits for input to either rollback or upgrade main application to newer version
+"*Canary Testing Successful*" is a manual step and waits for input to either rollback or upgrade main application to newer version
 
-"Rollback" step maps the route to divert all traffic to main application's service url and it deletes all canary artifacts. 
+"*Rollback*" step maps the route to divert all traffic to main application's service url and it deletes all canary artifacts. 
 
-"App upgrade in prod" step does following -
+"*App upgrade in prod*" step does following -
+
 a. It first maps all traffic coming to the application to canary version. In our example, frontend application (F) route now diverts all traffic to F's canary service url. F's canary diverts all traffic already to B's canary already as explained earlier. There is no traffic coming to F now, which implies that there is no traffic coming to B as well. B's route is also mapped to B's canary service url. B's canary also had a canary route.
 b. Now we figure out what new tag needs to be created. Once that is completed application's imagesteam and the new tag refers to the canary's imagestream and "canary" tag which was created during "Deploy canary application in Prod" step b. 
 c. Main application's deployment config is updated to refer to this new imagestream and tag. 
@@ -69,7 +73,18 @@ e. All artifacts for main application are updated with right label (version: <ne
 f. Now we could have deleted the canary version straight away, however we added a manual step here. This will become clearer in next section where we need to coordinate switching traffic back to main application when there are multiple applications/microservices involved during canary release.
 g. Once approved, traffic is moved back to main application (which is updated now) and all canary artifacts are deleted.
 
-Below figure outlines the process to upgrade F and B. 
+So, the idea/strategy is that if you have bunch of related microservices and you would like to perform canary upgrade for them, then you would need to identify -
+
+a. Identify at which microservice traffic going to be split
+b. Understand how microservices are communicating (via routes or via service)
+c. Deploy complete topology again as a canary. If there are some microservice that are not changed, then deploy the same version (which is running in prod) as a canary. For example - in below figure F1, B1, B2 and B3 are not changed. Therefore, their canaries are same images that are running in production.
+d. Deploy canaries as bottom up. Therefore B4 canary is deployed first, followed by B2 and in the last F1. Then the traffic is split.
+e. Once canaries are ok, then you should switch all traffic to canary toplogy and perform the upgrade. 
+f. Once upgrade is completed, then traffic should be switched. Move all the traffic to F1 and start deleting canaries top down. 
+
+image::docs/multiple_apps_strategy.png[]
+
+This demo focuses on two microservice, frontend and backend. However, the above strategy could be easily extended. Below figure outlines the process to upgrade F and B. 
 
 image::docs/canary_rel-lifecycle.png[]
 
@@ -79,6 +94,7 @@ c. Figure 3 explains that traffic to F is split and F's route is mapped to F's s
 d. Figure 4 explains that once it is established that canaries are working fine, then 100% traffic coming to F is now mapped to F's canary. Also, 100% traffic coming to B's route is mapped to B's canary. It should be noted that there would no traffic coming to B's route (because F's route is not receiving any traffic) but still we need to migrate this traffic. Why we did this would become clearer in next step. Also both F and B are upgraded at this stage. F and F's canary are using the same image and same with B and B's canary.
 e. Figure 5 is where co-ordination is happening on whether to switch traffic or not. First F's traffic is switched back to F's route and canary is deleted. F calls B's route which is mapped to B's canary at the moment (we did this change in step d above). But it does not matter now because both B and B' canary are referring to same image.
 f. Figure 6 depicts where decision to map B's route to B is taken and B's canary is deleted. F refer to B's route which now maps to B
+
 
 === Run Demo
 ==== Step 1: Install minishift
