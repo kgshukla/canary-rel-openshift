@@ -15,7 +15,7 @@ public class BackendMainController {
 	
 	@RequestMapping(value = "/", method = RequestMethod.GET)
 	public String hello () {
-		String mesg = "BackendMain-v1: Hello from pod - " + podName + "!";
+		String mesg = "BackendMain-v2: Hello from pod - " + podName + "!";
 		System.out.println(mesg);
 		return mesg;
 	}
