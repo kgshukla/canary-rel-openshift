@@ -21,7 +21,7 @@ And this demo aims to put across some thought and strategy on how this could be 
 
 The set up is shown in below figure
 
-image::docs/apps_deployment_arch.png[Deployment, 200,120]
+image::docs/apps_deployment_arch.png[Deployment, 640, 480]
 
 a. F1 and F2 are two pods of frontend application (F)
 b. B1 and B2 are two pods of backend application (B)
