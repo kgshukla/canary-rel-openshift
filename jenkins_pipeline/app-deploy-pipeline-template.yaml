@@ -18,6 +18,11 @@ parameters:
   displayName: Canary URL Required
   required: true
   value: "true"
+- name: DOMAIN_NAME
+  description: Domain name of the cluster
+  displayName: Domain Name
+  required: true
+  value: 192.168.99.100.nip.io
 objects:
 - apiVersion: v1
   kind: BuildConfig
@@ -45,9 +50,13 @@ objects:
               }
              
               stages {
-                stage("Check Params") {
+                stage("Print Params") {
                   steps {
-                    sh "echo project name - ${project} and project build name - ${project_build}"
+                    sh "echo APP_PROJECT  - ${project} "
+                    sh "echo APP_NAME - ${APP_NAME}"
+                    sh "echo CANARY_URL_REQ - ${CANARY_URL_REQ}"
+                    sh "echo DOMAIN_NAME - ${DOMAIN_NAME}"
+                    sh "echo and project build name - ${project_build}"
                   }
                 }
 
@@ -89,7 +98,7 @@ objects:
                           openshift.create("imagestream", "${APP_NAME}")
                           sh "oc label is/${APP_NAME} app=${APP_NAME} -n ${project}"
                           openshift.tag("${project_build}/${APP_NAME}:latest", "${APP_NAME}:1.1")
-                          sh "oc process ${APP_NAME}-template APP_NAME=${APP_NAME} APP_VERSION=1.1 PROJECT=${project} DC_NAME=${APP_NAME} -n ${project} | oc create -n ${project} -f -"
+                          sh "oc process ${APP_NAME}-template APP_NAME=${APP_NAME} APP_VERSION=1.1 PROJECT=${project} DC_NAME=${APP_NAME} DOMAIN_NAME=${DOMAIN_NAME} -n ${project} | oc create -n ${project} -f -"
                         }
                       }
                     }

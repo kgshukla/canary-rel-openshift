@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: app-main-canary-rollback-pipeline
+parameters:
+- name: APP_NAME
+  description: Name of the application
+  displayName: Application Name
+  required: true
+  value: backend-main
+- name: APP_PROJECT
+  description: Project or Namespace where application would be deployed
+  displayName: Project Name
+  required: true
+  value: backend-main
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      pipeline.alpha.openshift.io/uses: '[{"name": "${NAME}", "namespace": "", "kind": "DeploymentConfig"}]'
+    creationTimestamp: null
+    labels:
+      app: ${APP_NAME}-canary-rollback-jenkins
+    name: ${APP_NAME}-canary-rollback-jenkins
+  spec:
+    strategy:
+      jenkinsPipelineStrategy:
+        jenkinsfile: |-
+            pipeline {
+              environment {
+                appName="${APP_NAME}"
+                project="${APP_NAME}"
+                canary_exists="false"
+              }
+              
+              agent {
+                label 'maven'
+              }
+              
+              stages {
+                stage("Print Params") {
+                  steps {
+                    sh "echo APP_NAME - ${APP_NAME}"
+                    sh "echo APP_PROJECT - ${APP_PROJECT}"
+                  }
+                }
+
+
+                stage("Cleanup Canary") {
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          if (openshift.selector("all", [ app : "${APP_NAME}", version : "canary" ]).exists()) {
+                            openshift.selector("all", [ app : "${APP_NAME}", version : "canary" ]).delete()
+                            canary_exists="true"
+                          }
+                          if (openshift.selector("is", "${APP_NAME}-canary").exists()) {
+                            openshift.selector("is", "${APP_NAME}-canary").delete()
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+
+                stage("Map Route") {
+                  when {
+                    expression {
+                      return (canary_exists == "true")
+                    }
+                  }
+
+                  steps {
+                    script {
+                      openshift.withCluster() {
+                        openshift.withProject("${project}") {
+                          sh "oc set route-backends ${APP_NAME} ${APP_NAME}=100 -n ${project}"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+    type: JenkinsPipeline
+

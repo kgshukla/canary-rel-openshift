@@ -19,7 +19,7 @@ public class FrontendMainController {
 	
 	@RequestMapping(value = "/", method = RequestMethod.GET)
 	public String hello () {
-		String frontendMsg = "FrontendMain-v2: served by pod - " + podName + "!";
+		String frontendMsg = "FrontendMain-v1: served by pod - " + podName + "!";
 		System.out.println(frontendMsg);
 	    RestTemplate restTemplate = new RestTemplate();
 	    String result = restTemplate.getForObject(backendmainURL, String.class);

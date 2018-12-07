@@ -54,9 +54,14 @@ objects:
               }
               
               stages {
-                stage("Check Params") {
+                stage("Print Params") {
                   steps {
-                    sh "echo project name - ${project} and project build name - ${project_build}"
+                    sh "echo APP_PROJECT - ${project} "
+                    sh "echo APP_NAME - ${APP_NAME} "
+                    sh "echo GIT_SOURCE_URL - ${GIT_SOURCE_URL}"
+                    sh "echo GIT_CONTEXT_PATH - ${GIT_CONTEXT_PATH}"
+                    sh "echo GIT_SOURCE_REF - ${GIT_SOURCE_REF}"
+                    sh "echo project build name - ${project_build}"
                   }
                 }
 

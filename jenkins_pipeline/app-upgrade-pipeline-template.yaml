@@ -40,9 +40,10 @@ objects:
               }
               
               stages {
-                stage("Check Params") {
+                stage("Print Params") {
                   steps {
-                    sh "echo project name - ${project}"
+                    sh "echo APP_NAME - ${APP_NAME}"
+                    sh "echo APP_PROJECT - ${APP_PROJECT}"
                   }
                 }
 
