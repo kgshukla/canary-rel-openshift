@@ -21,7 +21,7 @@ And this demo aims to put across some thought and strategy on how this could be 
 
 The set up is shown in below figure
 
-image::docs/apps_deployment_arch.png[]
+image::docs/apps_deployment_arch.png[scaledwidth="50%"]
 
 a. F1 and F2 are two pods of frontend application (F)
 b. B1 and B2 are two pods of backend application (B)
@@ -595,4 +595,6 @@ image:docs/canary_rel-lifecycle.png[]
 
 === Conclusion
 
-For situations where you need to do A/B testing, Blue-Green or Canary deployments, you need to orchestrate the deployments of canaries, orchestrate canary urls and the logic in which we move the traffic back to the upgraded version. 
+For situations where you need to do A/B testing, Blue-Green or Canary deployments for multiple applications, then you need to orchestrate the deployments of canaries, orchestrate canary urls and the logic in which we move the traffic back to the upgraded version. You could do this via defining appropriate pipelines and then invoking them in right order.
+
+For use case, where we upgrade only backend application, we would still follow the same process. The difference here is that the canary version of the frontend application would be same version that is deployed in production. It is just an image replica so that the above approach works fine. 
