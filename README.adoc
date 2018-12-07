@@ -19,7 +19,21 @@ And this demo aims to put across some thought and strategy on how this could be 
 
 === Solution Architecture
 
-The set up is shown in below figure
+The idea/strategy is that if you have bunch of related microservices and you would like to perform canary upgrade for them in a coordinated manner, then you would need to perform following -
+
+a. Identify at which microservice traffic is going to be split
+b. Understand how microservices are communicating (via routes or via service)
+c. Deploy complete topology again as a canary. If there are some microservice that are not changed, then deploy the same version (which is running in prod) as a canary. For example - in below figure F1, B1, B2 and B3 are not changed. Therefore, their canaries are same images that are running in production.
+d. Deploy canaries bottom up. Therefore B4 canary is deployed first, followed by B2 and in the last F1. Then the traffic is split.
+e. Once canaries are ok, then you should switch all traffic to canary toplogy and perform the upgrade. 
+f. Once upgrade is completed, then traffic should be switched. Move all the traffic to F1 and start deleting canaries top down. 
+
+Many things will get clearer in below sections. Keep reading!
+
+image::docs/multiple_apps_strategy.png[MultipleApps, 600, 480]
+
+
+The set up for this demo is shown in below figure. We could easily extend this setup to more than two microservices
 
 image::docs/apps_deployment_arch.png[Deployment, 400, 480]
 
@@ -72,17 +86,6 @@ d. Deployment config is rolled out.
 e. All artifacts for main application are updated with right label (version: <new version>) 
 f. Now we could have deleted the canary version straight away, however we added a manual step here. This will become clearer in next section where we need to coordinate switching traffic back to main application when there are multiple applications/microservices involved during canary release.
 g. Once approved, traffic is moved back to main application (which is updated now) and all canary artifacts are deleted.
-
-So, the idea/strategy is that if you have bunch of related microservices and you would like to perform canary upgrade for them, then you would need to identify -
-
-a. Identify at which microservice traffic going to be split
-b. Understand how microservices are communicating (via routes or via service)
-c. Deploy complete topology again as a canary. If there are some microservice that are not changed, then deploy the same version (which is running in prod) as a canary. For example - in below figure F1, B1, B2 and B3 are not changed. Therefore, their canaries are same images that are running in production.
-d. Deploy canaries as bottom up. Therefore B4 canary is deployed first, followed by B2 and in the last F1. Then the traffic is split.
-e. Once canaries are ok, then you should switch all traffic to canary toplogy and perform the upgrade. 
-f. Once upgrade is completed, then traffic should be switched. Move all the traffic to F1 and start deleting canaries top down. 
-
-image::docs/multiple_apps_strategy.png[]
 
 This demo focuses on two microservice, frontend and backend. However, the above strategy could be easily extended. Below figure outlines the process to upgrade F and B. 
 
