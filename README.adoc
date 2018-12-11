@@ -1,4 +1,4 @@
-= Orchestrating Canary Releases for Multiple Applications
+= Orchestrating Canary Release for Multiple Applications in Openshift/Kubernetes
 
 === Introduction
 
